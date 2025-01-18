@@ -15,8 +15,8 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
-import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.crypto.SecretKey;
@@ -38,6 +38,8 @@ public class AuctionServer {
     public static SecretKey symmetricKey = AuctionServerHelpers.generateSymmetricKey();
     public static String symmetricKeyBase64 = AuctionServerHelpers.encodeSymmetricKey(symmetricKey);
     public static IvParameterSpec IV = AuctionServerHelpers.generateIV(symmetricKey);
+
+    public static LinkedList<Item> auctionItems;
 
     public static void main(String[] args) throws IOException {
         int portaServidor = 0; // Porta na qual ocorrerá a conexão TCP
@@ -67,7 +69,7 @@ public class AuctionServer {
     }
 
     public static void runServer(InetAddress ipServidor, int portaServidor) {
-        try (ServerSocket serverSocket = new ServerSocket(portaServidor, 0, ipServidor)) {
+        try ( ServerSocket serverSocket = new ServerSocket(portaServidor, 0, ipServidor)) {
             System.out.println("Servidor TCP iniciado no endereço " + ipServidor + ", porta " + portaServidor);
 
             // Conectar ao grupo multicast
@@ -75,6 +77,7 @@ public class AuctionServer {
             multicastSocket = new MulticastSocket(multicastPort);
             multicastSocket.joinGroup(multicastGroup);
             System.out.println("Servidor conectado ao grupo multicast.");
+            populateAuctionItems();
 
             // Iniciar a thread para receber mensagens do multicast
             Thread multicastReceiver = new Thread(() -> {
@@ -208,7 +211,7 @@ public class AuctionServer {
             InetAddress group = InetAddress.getByName(AuctionServer.multicastAddress);
             DatagramPacket packet = new DatagramPacket(message.getBytes(), message.length(), group, AuctionServer.multicastPort);
             AuctionServer.multicastSocket.send(packet);
-            System.out.println("Mensagem enviada [SERVER]: " + message);
+            System.out.println("[SERVER] - Mensagem enviada ao grupo multicast: " + message);
         } catch (IOException ex) {
             Logger.getLogger(AuctionServer.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -223,53 +226,67 @@ public class AuctionServer {
                 multicastSocket.receive(packet);  // Recebe a mensagem
 
                 String message = new String(packet.getData(), 0, packet.getLength());
-                System.out.println("Mensagem recebida [SERVER]: " + AuctionServerHelpers.decrypt(message, symmetricKey, IV));
+                String decryptedMessage = AuctionServerHelpers.decrypt(message, symmetricKey, IV);
+                System.out.println("[SERVER] - Mensagem recebida do grupo multicast: " + decryptedMessage);
 
                 // Chama a função para tratar a mensagem
-                handleReceivedMessage(message);
+                handleReceivedMessage(decryptedMessage);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+    // Função para popular a lista ficticia de itens do leilão
+    public static void populateAuctionItems() {
+        auctionItems.add(new Item("Pintura de Leonardo Da Vinci", 5000000.00, "Uma obra rara de Da Vinci, pintada em 1503, é considerada uma das mais valiosas do mundo.", "imagens/tao deixando a gente sonhar.png"));
+        auctionItems.add(new Item("Relógio de Ouro de Napoleão", 3500000.00, "Relógio de ouro usado por Napoleão Bonaparte durante suas campanhas, com gravuras detalhadas e história fascinante.", "imagens/tao deixando a gente sonhar.png"));
+        auctionItems.add(new Item("Cálice Sagrado", 250000.00, "Cálice antigo que supostamente foi usado durante a Última Ceia, feito de ouro e pedras preciosas.", "imagens/tao deixando a gente sonhar.png"));
+        auctionItems.add(new Item("Trono Medieval", 100000.00, "Trono de madeira nobre, feito à mão, usado em uma corte medieval durante o século XIII.", "imagens/tao deixando a gente sonhar.png"));
+        auctionItems.add(new Item("Fósseis de Dinossauro", 150000.00, "Fósseis completos de um dinossauro da era Cretácea, incluindo crânio e ossos raros.", "imagens/dinosaur_fossils.jpg"));
+        auctionItems.add(new Item("Espada Samurai Original", 300000.00, "Espada samurai original, forjada em ferro de alta qualidade durante o período Edo no Japão, com inscrições.", "imagens/samurai_sword.jpg"));
+        auctionItems.add(new Item("Lâmpada Mágica de Aladdin", 500000.00, "Uma réplica encantadora da famosa lâmpada mágica de Aladdin, com detalhes em ouro e pedras preciosas.", "imagens/aladdin_lamp.jpg"));
+    }
+
     // Função para tratar as ações de mensagem recebida
-    public static void handleReceivedMessage(String message) {
+    public static void handleReceivedMessage(String message) throws Exception {
+        System.out.println(message);
         if (message.startsWith("ENTROU")) {
             handleEnterMessage();
         } else if (message.startsWith("LANCE")) {
             handleBidMessage(message);
         } else if (message.startsWith("SAIR")) {
             handleExitMessage();
-        } 
+        }
     }
 
     // Ação para processar uma mensagem de lance
-    public static void handleBidMessage(String message) {
+    public static void handleBidMessage(String message) throws Exception {
         // Exemplo: LANCE: valor;item
         String[] parts = message.split(";");
         String bidValue = parts[1];  // valor do lance
         String item = parts[2];  // item relacionado ao lance
 
-        System.out.println("Lance recebido: " + bidValue + " no item: " + item);
+        System.out.println(" [SERVER] Lance recebido: " + bidValue + " no item: " + item);
 
-        // Lógica para processar o lance
-        String response = "Lance registrado: " + bidValue + " no item " + item;
-        sendMulticastMessage(response);
+        // Lógica para processar o lance e encriptar
+        String response = "[SERVER] Lance registrado: " + bidValue + " no item " + item;
+        String encryptedResponse = AuctionServerHelpers.encrypt(response, symmetricKey, IV);
+        sendMulticastMessage(encryptedResponse);
     }
 
     // Ação para processar quando alguém sair
     public static void handleExitMessage() {
-        System.out.println("Um participante saiu do grupo.");
-        String response = "Um participante saiu!";
-        sendMulticastMessage(response);
-    }
-    
-    // Ação para processar quando alguém sair
-    public static void handleEnterMessage() {
-        System.out.println("Um participante entrou do grupo.");
-        String response = "Um participante entrou!";
-        sendMulticastMessage(response);
+        System.out.println("[SERVER] Um participante saiu no grupo.");
     }
 
+    // Ação para processar quando alguém sair
+    public static void handleEnterMessage() {
+        System.out.println("[SERVER] Um participante entrou no grupo.");
+    }
+    
+    // Fazer uma função para abrir o jframe com um botão de começar / resetar leilão já com a tela STARTAUCTION pronta.
+    public static void openServerModal() {
+        
+    }
 }

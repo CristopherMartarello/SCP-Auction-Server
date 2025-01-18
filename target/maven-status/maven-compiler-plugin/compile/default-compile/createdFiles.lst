@@ -2,3 +2,4 @@ com\mycompany\view\StartAuction.class
 com\mycompany\utils\AuctionServerHelpers.class
 com\mycompany\view\StartAuction$1.class
 com\mycompany\auctionserver\AuctionServer.class
+com\mycompany\auctionserver\User.class
