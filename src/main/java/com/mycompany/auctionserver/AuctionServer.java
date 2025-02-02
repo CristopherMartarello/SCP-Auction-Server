@@ -1,6 +1,7 @@
 package com.mycompany.auctionserver;
 
 import com.mycompany.utils.AuctionServerHelpers;
+import com.mycompany.view.StartAuction;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -15,13 +16,16 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedList;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.swing.JOptionPane;
+import javax.swing.Timer;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class AuctionServer {
@@ -39,7 +43,11 @@ public class AuctionServer {
     public static String symmetricKeyBase64 = AuctionServerHelpers.encodeSymmetricKey(symmetricKey);
     public static IvParameterSpec IV = AuctionServerHelpers.generateIV(symmetricKey);
 
-    public static LinkedList<Item> auctionItems;
+    private static Item currentItem;
+    private static int currentItemIndex = 0;  // Índice do item atual
+    private static int timeLeft = 60;  // Duração de cada item (em segundos)
+    private static Timer auctionTimer;
+    public static List<Item> auctionItems = new ArrayList<>();
 
     public static void main(String[] args) throws IOException {
         int portaServidor = 0; // Porta na qual ocorrerá a conexão TCP
@@ -69,7 +77,7 @@ public class AuctionServer {
     }
 
     public static void runServer(InetAddress ipServidor, int portaServidor) {
-        try ( ServerSocket serverSocket = new ServerSocket(portaServidor, 0, ipServidor)) {
+        try (ServerSocket serverSocket = new ServerSocket(portaServidor, 0, ipServidor)) {
             System.out.println("Servidor TCP iniciado no endereço " + ipServidor + ", porta " + portaServidor);
 
             // Conectar ao grupo multicast
@@ -78,6 +86,7 @@ public class AuctionServer {
             multicastSocket.joinGroup(multicastGroup);
             System.out.println("Servidor conectado ao grupo multicast.");
             populateAuctionItems();
+            openServerModal();
 
             // Iniciar a thread para receber mensagens do multicast
             Thread multicastReceiver = new Thread(() -> {
@@ -227,7 +236,7 @@ public class AuctionServer {
 
                 String message = new String(packet.getData(), 0, packet.getLength());
                 String decryptedMessage = AuctionServerHelpers.decrypt(message, symmetricKey, IV);
-                System.out.println("[SERVER] - Mensagem recebida do grupo multicast: " + decryptedMessage);
+                System.out.println("[SERVER] - Mensagem recebida do grupo multicast: " + message);
 
                 // Chama a função para tratar a mensagem
                 handleReceivedMessage(decryptedMessage);
@@ -239,54 +248,230 @@ public class AuctionServer {
 
     // Função para popular a lista ficticia de itens do leilão
     public static void populateAuctionItems() {
-        auctionItems.add(new Item("Pintura de Leonardo Da Vinci", 5000000.00, "Uma obra rara de Da Vinci, pintada em 1503, é considerada uma das mais valiosas do mundo.", "imagens/tao deixando a gente sonhar.png"));
-        auctionItems.add(new Item("Relógio de Ouro de Napoleão", 3500000.00, "Relógio de ouro usado por Napoleão Bonaparte durante suas campanhas, com gravuras detalhadas e história fascinante.", "imagens/tao deixando a gente sonhar.png"));
-        auctionItems.add(new Item("Cálice Sagrado", 250000.00, "Cálice antigo que supostamente foi usado durante a Última Ceia, feito de ouro e pedras preciosas.", "imagens/tao deixando a gente sonhar.png"));
-        auctionItems.add(new Item("Trono Medieval", 100000.00, "Trono de madeira nobre, feito à mão, usado em uma corte medieval durante o século XIII.", "imagens/tao deixando a gente sonhar.png"));
-        auctionItems.add(new Item("Fósseis de Dinossauro", 150000.00, "Fósseis completos de um dinossauro da era Cretácea, incluindo crânio e ossos raros.", "imagens/dinosaur_fossils.jpg"));
-        auctionItems.add(new Item("Espada Samurai Original", 300000.00, "Espada samurai original, forjada em ferro de alta qualidade durante o período Edo no Japão, com inscrições.", "imagens/samurai_sword.jpg"));
-        auctionItems.add(new Item("Lâmpada Mágica de Aladdin", 500000.00, "Uma réplica encantadora da famosa lâmpada mágica de Aladdin, com detalhes em ouro e pedras preciosas.", "imagens/aladdin_lamp.jpg"));
+        auctionItems.add(new Item(
+                "Mona Lisa",
+                7800000.00,
+                "A obra-prima de Leonardo da Vinci, pintada entre 1503 e 1506. Este quadro icônico, conhecido por seu sorriso enigmático, é uma das pinturas mais valiosas e reconhecíveis do mundo.",
+                "/imagens/monalisa.png"
+        ));
+        auctionItems.add(new Item(
+                "Álbum 'The Beatles - Abbey Road'",
+                500000.00,
+                "Uma edição rara e autografada do álbum icônico 'Abbey Road', lançado pelos Beatles em 1969. Inclui anotações originais de Paul McCartney.",
+                "/imagens/abbey_road.png"
+        ));
+//        auctionItems.add(new Item(
+//                "Manuscrito de Albert Einstein",
+//                150000.00,
+//                "Uma coleção de anotações e fórmulas escritas à mão por Albert Einstein, incluindo rascunhos da famosa equação E=mc². Uma peça rara de história científica.",
+//                "/imagens/manuscrito_einstein.png"
+//        ));
+//        auctionItems.add(new Item(
+//                "Espada Excalibur",
+//                500000.00,
+//                "A lendária espada do Rei Arthur, com lâmina forjada por magia e empunhadura adornada com pedras preciosas. Um artefato místico repleto de histórias.",
+//                "/imagens/excalibur.png"
+//        ));
+//        auctionItems.add(new Item(
+//                "Chevrolet Impala 1967",
+//                120000.00,
+//                "Um clássico americano, o Chevrolet Impala 1967 é uma lenda entre os carros clássicos. Totalmente restaurado, com pintura preta impecável e motor V8.",
+//                "/imagens/chevrolet_impala.png"
+//        ));
+//        auctionItems.add(new Item(
+//                "Fóssil de Tiranossauro Rex",
+//                85000.00,
+//                "Um fóssil completo de Tiranossauro Rex, datado de 66 milhões de anos atrás. Inclui ossos preservados e crânio quase intacto. Uma janela para o passado pré-histórico.",
+//                "/imagens/fossil_t_rex.png"
+//        ));
+//        auctionItems.add(new Item(
+//                "Camisa de Pelé - Final de 1970",
+//                750000.00,
+//                "A lendária camisa usada por Pelé durante a final da Copa do Mundo de 1970, onde o Brasil conquistou o tricampeonato. Um pedaço da história do futebol.",
+//                "/imagens/camisa_pele.png"
+//        ));
     }
 
     // Função para tratar as ações de mensagem recebida
     public static void handleReceivedMessage(String message) throws Exception {
-        System.out.println(message);
-        if (message.startsWith("ENTROU")) {
-            handleEnterMessage();
-        } else if (message.startsWith("LANCE")) {
-            handleBidMessage(message);
-        } else if (message.startsWith("SAIR")) {
-            handleExitMessage();
+        JSONObject jsonMessage = new JSONObject(message);
+        // Verificar o tipo da mensagem pelo campo "@type"
+        if (jsonMessage.has("@type")) {
+            String actionType = jsonMessage.getString("@type");
+
+            switch (actionType) {
+                case "enter":
+                    handleEnterMessage(jsonMessage);
+                    break;
+                case "bid":
+                    handleBidMessage(jsonMessage);
+                    break;
+                case "exit":
+                    handleExitMessage(jsonMessage);
+                    break;
+                default:
+                    System.out.println("");
+            }
+        } else {
+            System.out.println("[SERVER] Mensagem recebida não possui o campo '@type'.");
         }
     }
 
     // Ação para processar uma mensagem de lance
-    public static void handleBidMessage(String message) throws Exception {
-        // Exemplo: LANCE: valor;item
-        String[] parts = message.split(";");
-        String bidValue = parts[1];  // valor do lance
-        String item = parts[2];  // item relacionado ao lance
+    public static void handleBidMessage(JSONObject jsonMessage) throws Exception {
+        // Extrai informações do JSON
+        String user = jsonMessage.getString("user");
+        double userBid = jsonMessage.getDouble("userBid");
+        String item = jsonMessage.getString("item");
+        double currentBid = Double.parseDouble(jsonMessage.getString("currentBid"));
 
-        System.out.println(" [SERVER] Lance recebido: " + bidValue + " no item: " + item);
+        if (userBid > currentBid && userBid > currentItem.getPrice()) {
+            System.out.println("[SERVER] Lance recebido: " + userBid + " no item: " + item + " por " + user);
 
-        // Lógica para processar o lance e encriptar
-        String response = "[SERVER] Lance registrado: " + bidValue + " no item " + item;
-        String encryptedResponse = AuctionServerHelpers.encrypt(response, symmetricKey, IV);
-        sendMulticastMessage(encryptedResponse);
+            // Atualizando o lance do usuário
+            currentItem.setCurrentBid(userBid);
+            currentItem.setCurrentWinner(user);
+
+            // Resposta para confirmar o lance
+            JSONObject responseJson = new JSONObject();
+            responseJson.put("@type", "success");
+            responseJson.put("bidValue", userBid);
+            responseJson.put("item", item);
+            responseJson.put("currentWinner", user);
+
+            // Envia a resposta criptografada
+            String response = AuctionServerHelpers.encrypt(responseJson.toString(), symmetricKey, IV);
+            sendMulticastMessage(response);
+        } else {
+            JSONObject responseJson = new JSONObject();
+            responseJson.put("@type", "error");
+
+            // Envia a resposta criptografada
+            String response = AuctionServerHelpers.encrypt(responseJson.toString(), symmetricKey, IV);
+            sendMulticastMessage(response);
+        }
     }
 
     // Ação para processar quando alguém sair
-    public static void handleExitMessage() {
+    public static void handleExitMessage(JSONObject jsonMessage) {
         System.out.println("[SERVER] Um participante saiu no grupo.");
+        System.out.println("[SERVER] " + jsonMessage);
     }
 
     // Ação para processar quando alguém sair
-    public static void handleEnterMessage() {
+    public static void handleEnterMessage(JSONObject jsonMessage) {
         System.out.println("[SERVER] Um participante entrou no grupo.");
+        System.out.println("[SERVER] " + jsonMessage);
     }
-    
+
+    public static void handleTimerMessage(JSONObject jsonMessage) {
+        System.out.println("[SERVER] Tempo restante para o item: " + jsonMessage.getString("timer"));
+    }
+
+    // Inicia o leilão e envia o primeiro item
+    public static void startAuction() throws Exception {
+        System.out.println("[SERVER] - Leilão iniciado!");
+
+        // Envia o primeiro item e começa o timer
+        sendNextItem();
+    }
+
+    // Envia o próximo item com o timer
+    private static void sendNextItem() throws Exception {
+        if (currentItemIndex < auctionItems.size()) {
+            currentItem = auctionItems.get(currentItemIndex);
+
+            // Cria o JSON com todas as informações do item
+            JSONObject itemJson = new JSONObject();
+            itemJson.put("@type", "item");
+            itemJson.put("name", currentItem.getName());
+            itemJson.put("price", currentItem.getPrice());
+            itemJson.put("description", currentItem.getDescription());
+            itemJson.put("imagePath", currentItem.getImagePath());
+            itemJson.put("currentBid", currentItem.getCurrentBid());
+
+            // Criptografa o JSON inteiro
+            String jsonString = itemJson.toString();
+            String encryptedJsonString = AuctionServerHelpers.encrypt(jsonString, symmetricKey, IV);
+
+            // Envia a mensagem criptografada para os clientes
+            sendMulticastMessage(encryptedJsonString);
+
+            // Inicia o timer para o item atual
+            startItemTimer();
+        } else {
+            System.out.println("[SERVER] - Leilão terminou!");
+            
+            JSONObject jsonMessage = new JSONObject();
+            jsonMessage.put("@type", "end");
+            JSONArray itemsArray = new JSONArray();
+            for (Item item : auctionItems) {
+                JSONObject itemJson = new JSONObject();
+                itemJson.put("name", item.getName());
+                itemJson.put("description", item.getDescription());
+                itemJson.put("price", item.getPrice());
+                itemJson.put("currentWinner", item.getCurrentWinner() != null ? item.getCurrentWinner() : "Não houve vencedor para este item");
+                itemJson.put("currentBid", item.getCurrentBid());
+                itemsArray.put(itemJson);
+            }
+
+            jsonMessage.put("auctionItems", itemsArray);
+            
+            String encryptedMessage = AuctionServerHelpers.encrypt(jsonMessage.toString(), symmetricKey, IV);
+            sendMulticastMessage(encryptedMessage);
+        }
+    }
+
+    // Controla o timer para cada item
+    private static void startItemTimer() {
+        timeLeft = 20;  // Redefine o tempo para o novo item
+        auctionTimer = new Timer(1000, e -> {
+            timeLeft--;
+            JSONObject timeJson = new JSONObject();
+            timeJson.put("@type", "timer");
+            timeJson.put("timeLeft", timeLeft);
+
+            try {
+                String encryptedTimeString = AuctionServerHelpers.encrypt(timeJson.toString(), symmetricKey, IV);
+                sendMulticastMessage(encryptedTimeString);
+            } catch (Exception ex) {
+                Logger.getLogger(AuctionServer.class.getName()).log(Level.SEVERE, null, ex);
+            }
+
+            System.out.println("Tempo restante para o item: " + timeLeft + "s");
+
+            // Quando o tempo acabar, avança para o próximo item
+            if (timeLeft <= 0) {
+                auctionTimer.stop();
+                currentItemIndex++;  // Avança para o próximo item
+                try {
+                    JSONObject itemResultJson = new JSONObject();
+                    if (currentItem.getCurrentWinner() != null) {
+                        itemResultJson.put("@type", "winner");
+                        itemResultJson.put("currentWinner", currentItem.getCurrentWinner());
+                    } else {
+                        itemResultJson.put("@type", "noWinner");
+                        itemResultJson.put("currentWinner", "Não houve um vencedor para " + currentItem.getName() + ".");
+                    }
+                    itemResultJson.put("item", currentItem.getName());
+                    itemResultJson.put("bidValue", currentItem.getCurrentBid());
+
+                    String encryptedTimeString = AuctionServerHelpers.encrypt(itemResultJson.toString(), symmetricKey, IV);
+                    sendMulticastMessage(encryptedTimeString);
+
+                    sendNextItem();  // Envia o próximo item
+                } catch (Exception ex) {
+                    Logger.getLogger(AuctionServer.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        });
+        auctionTimer.start();
+    }
+
     // Fazer uma função para abrir o jframe com um botão de começar / resetar leilão já com a tela STARTAUCTION pronta.
     public static void openServerModal() {
-        
+        StartAuction startFrame = new StartAuction();
+        startFrame.setVisible(true);
+        startFrame.setLocationRelativeTo(null);
     }
 }
